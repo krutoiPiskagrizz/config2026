@@ -1,0 +1,9 @@
+# стартовый скрипт этапа 2
+ls
+ls -l "my folder" file.txt
+cd /home
+cd "dir with spaces"
+foo bar
+exit extra
+ls "unclosed
+cd /end
