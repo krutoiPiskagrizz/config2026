@@ -116,11 +116,13 @@ class Shell:
         self.start = time.time()  # для uptime
         self.running = True
         self.commands = {
-            "ls": self.cmd_ls,
-            "cd": self.cmd_cd,
-            "uptime": self.cmd_uptime,
-            "cal": self.cmd_cal,
-            "exit": self.cmd_exit,
+            "ls": (self.cmd_ls, "ls [-l] [путь...]", "список содержимого каталога (-l - подробно)"),
+            "cd": (self.cmd_cd, "cd [путь]", "сменить каталог (без аргумента - в корень)"),
+            "uptime": (self.cmd_uptime, "uptime", "вывести информацию о времени работы системы"),
+            "cal": (self.cmd_cal, "cal [месяц] [год]", "вывести календарь"),
+            "rm": (self.cmd_rm, "rm [-r] путь...", "удалить файлы (-r - каталоги), только в памяти"),
+            "help": (self.cmd_help, "help", "список команд с описанием"),
+            "exit": (self.cmd_exit, "exit", "завершить работу эмулятора"),
         }
 
     def prompt(self):
@@ -155,6 +157,31 @@ class Shell:
             else:
                 rest.append(a)
         return flags, rest
+    
+    def cmd_ls(self, args):
+        flags, paths = self.split_opts(args, "l", "ls")
+        paths = paths or ["."]
+        for i, p in enumerate(paths):
+            node = self.vfs.find(self.abspath(p))
+            if node is None:
+                raise ShellError(f"ls: не удалось получить доступ к '{p}': нет такого файла или каталога")
+            if len(paths) > 1:
+                print(f"{p}:")
+            if node.is_dir:
+                items = sorted(node.children.values(), key=lambda n: n.name)
+            else:
+                items = [node]
+            for n in items:
+                label = p if n is node else n.name + ("/" if n.is_dir else "")
+                if "l" in flags:
+                    size = 0 if n.is_dir else len(n.data)
+                    print(f"{'d' if n.is_dir else '-'} {size:>8} {label}")
+                else:
+                    print(label)
+            if len(paths) > 1 and i < len(paths) - 1:
+                print()
+                
+                
     def cmd_cd(self, args):
         if len(args) > 1:
             raise ShellError("cd: слишком много аргументов")
@@ -195,6 +222,30 @@ class Shell:
             raise ShellError(f"cal: неверный месяц: {month}")
         cal = calendar.TextCalendar(firstweekday=0)
         print(cal.formatyear(year) if month is None else cal.formatmonth(year, month))
+        
+    def cmd_rm(self, args):
+        flags, paths = self.split_opts(args, "r", "rm")
+        if not paths:
+            raise ShellError("rm: не указан операнд")
+        for p in paths:
+            ab = self.abspath(p)
+            node = self.vfs.find(ab)
+            if node is None:
+                raise ShellError(f"rm: невозможно удалить '{p}': нет такого файла или каталога")
+            if ab == "/":
+                raise ShellError("rm: нельзя удалить корневой каталог")
+            if node.is_dir and "r" not in flags:
+                raise ShellError(f"rm: невозможно удалить '{p}': это каталог (нужен ключ -r)")
+            if self.cwd == ab or self.cwd.startswith(ab + "/"):
+                raise ShellError(f"rm: невозможно удалить '{p}': это текущий каталог или его родитель")
+            parent = self.vfs.find(posixpath.dirname(ab))
+            del parent.children[node.name]
+            
+    def cmd_help(self, args):
+        if args:
+            raise ShellError("help: команда не принимает аргументов")
+        for _, usage, desc in self.commands.values():
+            print(f"  {usage:<22} {desc}")
 
     def cmd_exit(self, args):
         if args:
