@@ -1,0 +1,42 @@
+# Стартовый скрипт этапа 4: ls, cd, uptime, cal и обработка ошибок
+# --- ls: обычный, подробный (-l), путь, несколько путей, файл
+ls
+ls -l
+ls home/user
+ls /home/user/projects/app/lib
+ls /etc /empty
+ls etc/config.cfg
+ls /empty
+# --- ls: ошибки
+ls nonexistent
+ls -z
+# --- cd: абсолютный и относительный путь, .. и без аргументов
+cd home/user/projects
+ls
+cd app/lib
+ls -l
+cd ../..
+cd /
+cd /home/user
+cd
+# --- cd: ошибки
+cd nope
+cd /etc/config.cfg
+cd /home /etc
+# --- uptime
+uptime
+uptime extra
+# --- cal: месяц, год, текущий месяц
+cal
+cal 2 2024
+cal 2025
+# --- cal: ошибки
+cal 13 2024
+cal abc
+cal 1 2 3
+cal 0
+# --- общие ошибки
+foo bar
+ls "unclosed
+exit extra
+exit

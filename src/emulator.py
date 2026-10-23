@@ -1,21 +1,22 @@
+"""Эмулятор оболочки. Этап 4: основные команды (ls, cd, uptime, cal)."""
 import argparse
-import os
-import shlex
-import sys
 import base64
 import binascii
-import csv
-import posixpath
 import calendar
+import csv
 import datetime
+import os
+import posixpath
+import shlex
+import sys
 import time
 
 class ShellError(Exception):
- """ошибка выполнения команды"""
- 
+    """Ошибка выполнения команды."""
+    
 class VfsError(Exception):
     """Ошибка загрузки VFS."""
-    
+
 class Node:
     """Элемент VFS: каталог (is_dir=True) или файл с данными."""
 
@@ -26,7 +27,7 @@ class Node:
         self.children = {}  
 
 class VFS:
-    """виртуальная файловая система, целиком в памяти.
+    """Виртуальная файловая система, целиком в памяти.
 
     Формат CSV: path,type,content
       path    - полный путь от корня (/a/b/c.txt): так задаётся вложенность;
@@ -67,7 +68,7 @@ class VFS:
             raise VfsError(f"строка {lineno}: неизвестный тип '{kind}'")
         parts = p.strip("/").split("/")
         node = self.root
-        for part in parts[:-1]:  
+        for part in parts[:-1]:  # промежуточные каталоги создаём неявно
             nxt = node.children.setdefault(part, Node(part, True))
             if not nxt.is_dir:
                 raise VfsError(f"строка {lineno}: '{part}' - не каталог")
@@ -99,7 +100,7 @@ class VFS:
                 else:
                     files += 1
         return dirs, files
-    
+
     def find(self, abspath):
         """Возвращает Node по абсолютному пути или None, если пути нет."""
         node = self.root
@@ -109,20 +110,19 @@ class VFS:
             node = node.children[part]
         return node
 
+
 class Shell:
     def __init__(self, vfs):
         self.vfs = vfs
-        self.cwd = "/"  # текущий каталог
-        self.start = time.time()  # для uptime
+        self.cwd = "/"  
+        self.start = time.time()  
         self.running = True
         self.commands = {
-            "ls": (self.cmd_ls, "ls [-l] [путь...]", "список содержимого каталога (-l - подробно)"),
-            "cd": (self.cmd_cd, "cd [путь]", "сменить каталог (без аргумента - в корень)"),
-            "uptime": (self.cmd_uptime, "uptime", "вывести информацию о времени работы системы"),
-            "cal": (self.cmd_cal, "cal [месяц] [год]", "вывести календарь"),
-            "rm": (self.cmd_rm, "rm [-r] путь...", "удалить файлы (-r - каталоги), только в памяти"),
-            "help": (self.cmd_help, "help", "список команд с описанием"),
-            "exit": (self.cmd_exit, "exit", "завершить работу эмулятора"),
+            "ls": self.cmd_ls,
+            "cd": self.cmd_cd,
+            "uptime": self.cmd_uptime,
+            "cal": self.cmd_cal,
+            "exit": self.cmd_exit,
         }
 
     def prompt(self):
@@ -142,7 +142,7 @@ class Shell:
         name, args = argv[0], argv[1:]
         if name not in self.commands:
             raise ShellError(f"{name}: команда не найдена")
-        self.commands[name][0](args)
+        self.commands[name](args)
 
     @staticmethod
     def split_opts(args, allowed, cmd):
@@ -157,7 +157,7 @@ class Shell:
             else:
                 rest.append(a)
         return flags, rest
-    
+
     def cmd_ls(self, args):
         flags, paths = self.split_opts(args, "l", "ls")
         paths = paths or ["."]
@@ -180,8 +180,7 @@ class Shell:
                     print(label)
             if len(paths) > 1 and i < len(paths) - 1:
                 print()
-                
-                
+
     def cmd_cd(self, args):
         if len(args) > 1:
             raise ShellError("cd: слишком много аргументов")
@@ -222,30 +221,7 @@ class Shell:
             raise ShellError(f"cal: неверный месяц: {month}")
         cal = calendar.TextCalendar(firstweekday=0)
         print(cal.formatyear(year) if month is None else cal.formatmonth(year, month))
-        
-    def cmd_rm(self, args):
-        flags, paths = self.split_opts(args, "r", "rm")
-        if not paths:
-            raise ShellError("rm: не указан операнд")
-        for p in paths:
-            ab = self.abspath(p)
-            node = self.vfs.find(ab)
-            if node is None:
-                raise ShellError(f"rm: невозможно удалить '{p}': нет такого файла или каталога")
-            if ab == "/":
-                raise ShellError("rm: нельзя удалить корневой каталог")
-            if node.is_dir and "r" not in flags:
-                raise ShellError(f"rm: невозможно удалить '{p}': это каталог (нужен ключ -r)")
-            if self.cwd == ab or self.cwd.startswith(ab + "/"):
-                raise ShellError(f"rm: невозможно удалить '{p}': это текущий каталог или его родитель")
-            parent = self.vfs.find(posixpath.dirname(ab))
-            del parent.children[node.name]
-            
-    def cmd_help(self, args):
-        if args:
-            raise ShellError("help: команда не принимает аргументов")
-        for _, usage, desc in self.commands.values():
-            print(f"  {usage:<22} {desc}")
+
 
     def cmd_exit(self, args):
         if args:
@@ -290,7 +266,7 @@ class Shell:
 
 def main():
     ap = argparse.ArgumentParser(description="Эмулятор оболочки UNIX")
-    ap.add_argument("--vfs", required=True, help="путь к физическому расположению VFS")
+    ap.add_argument("--vfs", required=True, help="путь к CSV-файлу с VFS")
     ap.add_argument("--script", help="путь к стартовому скрипту")
     a = ap.parse_args()
 
@@ -305,7 +281,7 @@ def main():
         return 1
     dirs, files = vfs.count()
     print(f"[debug] VFS '{vfs.name}' загружена: каталогов {dirs}, файлов {files}")
-    
+
     shell = Shell(vfs)
     if a.script:
         shell.run_script(a.script)
