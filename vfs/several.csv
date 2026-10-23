@@ -1,0 +1,7 @@
+path,type,content
+/hello.txt,file,SGVsbG8sIHdvcmxkIQ==
+/notes.txt,file,c29tZSBub3Rlcw==
+/docs,dir,
+/docs/todo.txt,file,MS4gZmluaXNoIGhvbWV3b3Jr
+/bin,dir,
+/bin/data.bin,file,5TJKMFsv3ziWfHGllWI6wg==

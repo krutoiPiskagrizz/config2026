@@ -1,7 +1,7 @@
 cd "$(dirname "$0")/.."
 
 FAILED=0
-
+run_test() {
     local title="$1" expected="$2"
     shift 2
     echo "=== $title ==="

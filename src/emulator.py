@@ -142,7 +142,7 @@ class Shell:
         name, args = argv[0], argv[1:]
         if name not in self.commands:
             raise ShellError(f"{name}: команда не найдена")
-        self.commands[name](args)
+        self.commands[name][0](args)
 
     @staticmethod
     def split_opts(args, allowed, cmd):
