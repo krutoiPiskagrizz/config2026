@@ -1,19 +1,17 @@
-"""Эмулятор оболочки. Этап 4: основные команды (ls, cd, uptime, cal)."""
+"""Эмулятор оболочки. Этап 3: подключение VFS (загрузка из CSV в память)."""
 import argparse
 import base64
 import binascii
-import calendar
 import csv
-import datetime
 import os
 import posixpath
 import shlex
 import sys
-import time
+
 
 class ShellError(Exception):
     """Ошибка выполнения команды."""
-    
+
 class VfsError(Exception):
     """Ошибка загрузки VFS."""
 
@@ -25,6 +23,7 @@ class Node:
         self.is_dir = is_dir
         self.data = data
         self.children = {}  
+
 
 class VFS:
     """Виртуальная файловая система, целиком в памяти.
@@ -101,167 +100,54 @@ class VFS:
                     files += 1
         return dirs, files
 
-    def find(self, abspath):
-        """Возвращает Node по абсолютному пути или None, если пути нет."""
-        node = self.root
-        for part in [x for x in abspath.split("/") if x]:
-            if not node.is_dir or part not in node.children:
-                return None
-            node = node.children[part]
-        return node
+
+def cmd_ls(args):
+    print("ls", args)  
 
 
-class Shell:
-    def __init__(self, vfs):
-        self.vfs = vfs
-        self.cwd = "/"  
-        self.start = time.time()  
-        self.running = True
-        self.commands = {
-            "ls": self.cmd_ls,
-            "cd": self.cmd_cd,
-            "uptime": self.cmd_uptime,
-            "cal": self.cmd_cal,
-            "exit": self.cmd_exit,
-        }
+def cmd_cd(args):
+    print("cd", args)  
 
-    def prompt(self):
-        return f"user@{self.vfs.name}:{self.cwd}$ "
 
-    def abspath(self, p):
-        """Превращает относительный путь в абсолютный (учитывает . и ..)."""
-        return posixpath.normpath(posixpath.join(self.cwd, p))
+def cmd_exit(args):
+    sys.exit(0)
 
-    def execute(self, line):
+
+COMMANDS = {"ls": cmd_ls, "cd": cmd_cd, "exit": cmd_exit}
+
+
+def execute(line):
+    try:
+        argv = shlex.split(line)
+    except ValueError as e:
+        raise ShellError(f"ошибка разбора: {e}")
+    if not argv:
+        return
+    name, args = argv[0], argv[1:]
+    if name not in COMMANDS:
+        raise ShellError(f"{name}: команда не найдена")
+    if name == "exit" and args:
+        raise ShellError("exit: команда не принимает аргументов")
+    COMMANDS[name](args)
+
+
+def run_script(path, prompt):
+    """Выполняет скрипт: показывает ввод и вывод, ошибочные строки пропускает."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError as e:
+        print(f"Ошибка: не удалось открыть стартовый скрипт: {e}", file=sys.stderr)
+        return
+    for n, line in enumerate(lines, 1):
+        print(prompt + line)
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
         try:
-            argv = shlex.split(line)
-        except ValueError as e:
-            raise ShellError(f"ошибка разбора: {e}")
-        if not argv:
-            return
-        name, args = argv[0], argv[1:]
-        if name not in self.commands:
-            raise ShellError(f"{name}: команда не найдена")
-        self.commands[name](args)
-
-    @staticmethod
-    def split_opts(args, allowed, cmd):
-        """Делит аргументы на ключи (-l) и остальное (пути)."""
-        flags, rest = set(), []
-        for a in args:
-            if a.startswith("-") and len(a) > 1:
-                for ch in a[1:]:
-                    if ch not in allowed:
-                        raise ShellError(f"{cmd}: неверный ключ -- '{ch}'")
-                    flags.add(ch)
-            else:
-                rest.append(a)
-        return flags, rest
-
-    def cmd_ls(self, args):
-        flags, paths = self.split_opts(args, "l", "ls")
-        paths = paths or ["."]
-        for i, p in enumerate(paths):
-            node = self.vfs.find(self.abspath(p))
-            if node is None:
-                raise ShellError(f"ls: не удалось получить доступ к '{p}': нет такого файла или каталога")
-            if len(paths) > 1:
-                print(f"{p}:")
-            if node.is_dir:
-                items = sorted(node.children.values(), key=lambda n: n.name)
-            else:
-                items = [node]
-            for n in items:
-                label = p if n is node else n.name + ("/" if n.is_dir else "")
-                if "l" in flags:
-                    size = 0 if n.is_dir else len(n.data)
-                    print(f"{'d' if n.is_dir else '-'} {size:>8} {label}")
-                else:
-                    print(label)
-            if len(paths) > 1 and i < len(paths) - 1:
-                print()
-
-    def cmd_cd(self, args):
-        if len(args) > 1:
-            raise ShellError("cd: слишком много аргументов")
-        target = self.abspath(args[0]) if args else "/"
-        node = self.vfs.find(target)
-        if node is None:
-            raise ShellError(f"cd: {args[0]}: нет такого файла или каталога")
-        if not node.is_dir:
-            raise ShellError(f"cd: {args[0]}: не является каталогом")
-        self.cwd = target
-
-    def cmd_uptime(self, args):
-        if args:
-            raise ShellError("uptime: команда не принимает аргументов")
-        secs = int(time.time() - self.start)
-        h, rem = divmod(secs, 3600)
-        m, s = divmod(rem, 60)
-        now = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f" {now} up {h:02d}:{m:02d}:{s:02d}, 1 user")
-
-    def cmd_cal(self, args):
-        try:
-            nums = [int(a) for a in args]
-        except ValueError:
-            raise ShellError("cal: аргументы должны быть числами")
-        today = datetime.date.today()
-        if len(nums) == 0:
-            year, month = today.year, today.month
-        elif len(nums) == 1:
-            year, month = nums[0], None  # весь год
-        elif len(nums) == 2:
-            month, year = nums
-        else:
-            raise ShellError("cal: слишком много аргументов")
-        if not 1 <= year <= 9999:
-            raise ShellError(f"cal: неверный год: {year}")
-        if month is not None and not 1 <= month <= 12:
-            raise ShellError(f"cal: неверный месяц: {month}")
-        cal = calendar.TextCalendar(firstweekday=0)
-        print(cal.formatyear(year) if month is None else cal.formatmonth(year, month))
-
-
-    def cmd_exit(self, args):
-        if args:
-            raise ShellError("exit: команда не принимает аргументов")
-        self.running = False
-
-    def run_script(self, path):
-        """Выполняет скрипт: показывает ввод и вывод, ошибочные строки пропускает."""
-        try:
-            with open(path, encoding="utf-8") as f:
-                lines = f.read().splitlines()
-        except OSError as e:
-            print(f"Ошибка: не удалось открыть стартовый скрипт: {e}", file=sys.stderr)
-            return
-        for n, line in enumerate(lines, 1):
-            if not self.running:
-                break
-            print(self.prompt() + line)
-            if not line.strip() or line.lstrip().startswith("#"):
-                continue
-            try:
-                self.execute(line)
-            except ShellError as e:
-                print(e, file=sys.stderr)
-                print(f"[скрипт] ошибка в строке {n}, строка пропущена", file=sys.stderr)
-
-    def repl(self):
-        while self.running:
-            try:
-                line = input(self.prompt())
-            except EOFError:
-                print()
-                break
-            except KeyboardInterrupt:
-                print()
-                continue
-            try:
-                self.execute(line)
-            except ShellError as e:
-                print(e, file=sys.stderr)
+            execute(line)
+        except ShellError as e:
+            print(e, file=sys.stderr)
+            print(f"[скрипт] ошибка в строке {n}, строка пропущена", file=sys.stderr)
 
 
 def main():
@@ -282,10 +168,23 @@ def main():
     dirs, files = vfs.count()
     print(f"[debug] VFS '{vfs.name}' загружена: каталогов {dirs}, файлов {files}")
 
-    shell = Shell(vfs)
+    prompt = f"user@{vfs.name}:/$ "
     if a.script:
-        shell.run_script(a.script)
-    shell.repl()
+        run_script(a.script, prompt)
+
+    while True:
+        try:
+            line = input(prompt)
+        except EOFError:
+            print()
+            break
+        except KeyboardInterrupt:
+            print()
+            continue
+        try:
+            execute(line)
+        except ShellError as e:
+            print(e, file=sys.stderr)
     return 0
 
 
